@@ -278,7 +278,7 @@ func (c *Context) Replay(words []uint32, data []byte) error {
 	refs := make([]any, 0, len(c.objs))
 	for _, o := range c.objs {
 		switch o.(type) {
-		case *webgpu.Buffer, *webgpu.TextureView, *webgpu.BindGroup, *webgpu.RenderPipeline, *webgpu.ComputePipeline:
+		case *webgpu.Buffer, *webgpu.Texture, *webgpu.TextureView, *webgpu.BindGroup, *webgpu.RenderPipeline, *webgpu.ComputePipeline:
 			refs = append(refs, o)
 		}
 	}
