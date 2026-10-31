@@ -65,8 +65,11 @@ Each decoder of guest input has a fuzz target, run in CI:
   creation descriptors (`wire.RemapDescriptor`), before the backend sees
   them. The backend then checks each stream with go-gfx/webgpu's own
   reader. A frame that fails loses its context. `BIND_RESOURCE` gives a
-  bounded window of a resource attached to that same context. Nothing
-  has replayed on a GPU yet.
+  bounded window of a resource attached to that same context.
+  A guest program written against the go-gfx/webgpu API also runs
+  through this path: a remote device (`webgpu.NewRemoteDevice`) sends
+  its frames through the go-virtio/gpu driver (`e2e`,
+  `TestGuestRemoteDevice`).
 - **WebGPU backend (`webgpuback`, GOOS=js): validated in a browser on a real
   GPU.** The go-virtio/gpu guest driver drives gpudev over `pcisim` inside
   a Chromium worker.
