@@ -1,0 +1,6 @@
+github.com/go-gfx/webgpu v0.2.0 h1:Xfsf7tBDSoRXZcn8YhkpNnMY//NGyxl1PxAYGqo1EGA=
+github.com/go-gfx/webgpu v0.2.0/go.mod h1:60qAy+J79Ag1Yx5w+kGQUPbtISHuvhy4f/oZAPDeC4Y=
+github.com/go-virtio/common v0.3.0 h1:Us7yk7AIRQ1uPvgGkiF8imuHz9QqDbadNk6RwEeg2wk=
+github.com/go-virtio/common v0.3.0/go.mod h1:+ziROra3KodlWCF1wcQ5aNcnAiAchgxHcGw1MDJAw1c=
+github.com/go-virtio/gpu v0.8.1-0.20261031215150-6f079649f087 h1:tV8+QeaLWf9viist2K8nibuMQ092/rHlDnPG77RbjMc=
+github.com/go-virtio/gpu v0.8.1-0.20261031215150-6f079649f087/go.mod h1:xT7FjSKJXAS9+PMsP8q0lBYF/H4FTkOkKzOoM6BV3as=
