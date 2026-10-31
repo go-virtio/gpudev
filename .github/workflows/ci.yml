@@ -71,7 +71,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with: { go-version: '1.27.3' }
-      - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      - name: register the s390x QEMU binfmt handler
+        run: docker run --rm --privileged tonistiigi/binfmt --install s390x
       - run: GOARCH=s390x go test -count=1 ./...
 
   cross:
