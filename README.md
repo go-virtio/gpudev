@@ -3,7 +3,9 @@
 `github.com/go-virtio/gpudev` is the host side of virtio-gpu: a pure-Go device
 model that guest drivers talk to (go-virtio/gpu, the Linux `virtio_gpu`
 driver, or any other). It executes the control queue's 2D commands,
-answers the capset queries, and presents through a pluggable backend.
+answers the capset queries, hosts webgpu-batch contexts (capset 30:
+go-gfx/webgpu command streams from a guest), and presents through a
+pluggable backend.
 
 It is the counterpart of [go-virtio/gpu](https://github.com/go-virtio/gpu),
 which is guest-side only. Design:
@@ -53,7 +55,17 @@ Each decoder of guest input has a fuzz target, run in CI:
   driver brings the device up over `pcisim` and draws frames through real
   virtqueues; the scanout holds exactly what it drew (`e2e`). It has not
   yet run under a hypervisor.
-- **webgpu-batch contexts:** not offered yet (3D commands are refused).
+- **webgpu-batch contexts: validated in-process against the go-virtio/gpu
+  guest driver.** The driver queries the capset, creates a context and
+  makes fenced, ringed `SUBMIT_3D` calls, and the device runs them
+  against the in-memory backend (`e2e`). Each frame is decoded with
+  `wgpubatch.Decode`. Guest object ids are private to the context and are
+  translated to the backend's ids, in streams (`wire.Remap`) and in
+  creation descriptors (`wire.RemapDescriptor`), before the backend sees
+  them. The backend then checks each stream with go-gfx/webgpu's own
+  reader. A frame that fails loses its context. `BIND_RESOURCE` gives a
+  bounded window of a resource attached to that same context. Nothing
+  has replayed on a GPU yet.
 - **WebGPU backend:** not written yet.
 
 100% statement coverage in every package, with tests on linux, macOS,

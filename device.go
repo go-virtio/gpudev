@@ -271,6 +271,9 @@ func (d *Device) unref(id uint32) response {
 			_ = d.be.SetScanout(uint32(i), 0, Rect{})
 		}
 	}
+	for _, c := range d.ctxs {
+		delete(c.attached, id)
+	}
 	d.be.DestroyResource(id)
 	delete(d.res, id)
 	d.hostmem -= uint64(r.w) * uint64(r.h) * BytesPerPixel
@@ -372,7 +375,7 @@ func (d *Device) gather(r *resource, off, span, stride, row uint64, rows uint32)
 	}
 	out := make([]byte, uint64(rows)*row)
 	for y := uint64(0); y < uint64(rows); y++ {
-		if err := d.readBacking(r, off+y*stride, out[y*row:(y+1)*row]); err != nil {
+		if err := d.copyBacking(r, off+y*stride, out[y*row:(y+1)*row], false); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -384,19 +387,24 @@ func entryAt(r *resource, off uint64) int {
 	return sort.Search(len(r.starts), func(i int) bool { return r.starts[i] > off }) - 1
 }
 
-// readBacking copies len(dst) bytes of the flattened backing at off,
-// across entries. The caller has bounded off+len(dst) by r.length.
-func (d *Device) readBacking(r *resource, off uint64, dst []byte) error {
-	for len(dst) > 0 {
+// copyBacking copies len(p) bytes between p and the flattened backing at
+// off, across entries (into the backing when write). The caller has
+// bounded off+len(p) by r.length.
+func (d *Device) copyBacking(r *resource, off uint64, p []byte, write bool) error {
+	for len(p) > 0 {
 		i := entryAt(r, off)
 		in := off - r.starts[i]
-		n := min(uint64(len(dst)), uint64(r.backing[i].len)-in)
+		n := min(uint64(len(p)), uint64(r.backing[i].len)-in)
 		b, err := d.mem.Slice(r.backing[i].addr+in, n)
 		if err != nil {
 			return err
 		}
-		copy(dst, b)
-		dst, off = dst[n:], off+n
+		if write {
+			copy(b, p)
+		} else {
+			copy(p, b)
+		}
+		p, off = p[n:], off+n
 	}
 	return nil
 }

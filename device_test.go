@@ -278,6 +278,7 @@ func TestCapsets(t *testing.T) {
 	}
 	r.want(t, "no capset", cmd(gpudev.CmdGetCapsetInfo, 0, 0), gpudev.RespErrInvalidParameter)
 	r.want(t, "no capset data", cmd(gpudev.CmdGetCapset, 30, 1), gpudev.RespErrInvalidParameter)
+	r.want(t, "no contexts without the capset", cmd(gpudev.CmdCtxDestroy), gpudev.RespErrUnspec)
 
 	caps := wgpubatch.Caps{Version: 1, StreamVersion: 1, MaxFrame: 1 << 16, MaxObjects: 64, MaxRings: 1, MaxMemory: 1 << 20}
 	r = newRig(gpudev.Config{Scanouts: []gpudev.Rect{{Width: 16, Height: 16}}, WebGPUBatch: &caps})
@@ -295,7 +296,7 @@ func TestCapsets(t *testing.T) {
 	}
 	r.want(t, "other id", cmd(gpudev.CmdGetCapset, 4, 0), gpudev.RespErrInvalidParameter)
 	r.want(t, "future version", cmd(gpudev.CmdGetCapset, 30, 2), gpudev.RespErrInvalidParameter)
-	r.want(t, "3D refused", cmd(gpudev.CmdCtxDestroy), gpudev.RespErrUnspec)
+	r.want(t, "unknown context", cmd(gpudev.CmdCtxDestroy), gpudev.RespErrInvalidContextID)
 }
 
 func TestRAM(t *testing.T) {

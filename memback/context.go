@@ -82,6 +82,9 @@ func (c *Context) Replay(words []uint32, data []byte) error {
 func (c *Context) Bind(id uint32, w gpudev.Window) error {
 	c.b.Lock()
 	defer c.b.Unlock()
+	if c.b.Fail != nil {
+		return c.b.Fail
+	}
 	if _, ok := c.Objects[id]; !ok {
 		return ErrUnknown
 	}
