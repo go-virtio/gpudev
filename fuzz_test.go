@@ -28,6 +28,19 @@ func FuzzHandleControl(f *testing.F) {
 	}
 	f.Add(joined)
 	f.Add(cmd(gpudev.CmdGetDisplayInfo))
+	e := wgpubatch.NewEncoder(4096)
+	e.Create(1, 1, desc())
+	e.Create(2, 8, desc(1))
+	e.Stream([]uint32{30, 1, 0, 0, 0, 4, 40}, []byte{1, 2, 3, 4})
+	e.BindResource(wgpubatch.BindResource{ID: 1, ResourceID: 1, Size: 8})
+	e.Destroy(2)
+	fr, _ := e.Frame()
+	var batch []byte
+	for _, s := range [][]byte{create(1, gpudev.FormatB8G8R8A8, 16, 16), attach(1, [2]uint64{base, 1024}),
+		ctxCreate(1, 0, 30), ctxCmd(gpudev.CmdCtxAttachResource, 1, 1, 0), submit(1, fr)} {
+		batch = append(append(batch, s...), 0xFF, 0xFE)
+	}
+	f.Add(batch)
 	caps := wgpubatch.Caps{Version: 1, StreamVersion: 1, MaxFrame: 4096, MaxObjects: 16, MaxRings: 1, MaxMemory: 1 << 16}
 	const budget = 64 << 10
 	f.Fuzz(func(t *testing.T, in []byte) {

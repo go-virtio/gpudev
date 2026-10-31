@@ -107,6 +107,9 @@ func TestContext(t *testing.T) {
 	if err := c.Replay(ok, nil); err != errDown {
 		t.Error("replay while failing")
 	}
+	if err := c.Bind(id, window{}); err != errDown {
+		t.Error("bind while failing")
+	}
 	c.Close()
 	if !c.Closed || b.Contexts[7] != nil {
 		t.Error("close")
