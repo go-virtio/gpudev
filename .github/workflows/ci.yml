@@ -1,0 +1,130 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+permissions: { contents: read }
+
+jobs:
+  # A workflow that fails to parse reports no checks at all, which reads
+  # exactly like checks that have not started. actionlint is the first lane.
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+  lint:
+    name: gofmt and vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - run: go version
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "::error::not gofmt-ed:"; echo "$out"; exit 1; fi
+      - run: go vet ./...
+
+  # The device model takes untrusted input on every path: every package is
+  # held to every block covered (covblocks: go tool cover -func rounds to
+  # one decimal and passes at 99.95%).
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - run: go version
+      # bash on every OS: PowerShell splits -coverprofile=cover.out at the dot.
+      - shell: bash
+        run: go test -race -count=1 -coverprofile=cover.out ./...
+      - shell: bash
+        run: go run github.com/go-fleettools/fleettools/cmd/covblocks@v0.46.0 cover.out
+
+  # 32-bit: sizes and offsets are uint64 arithmetic that must not depend on
+  # int being 64 bits; s390x: the protocol is little-endian on a
+  # big-endian host. Both run the tests; the rest of the matrix builds.
+  test-386:
+    name: test (linux/386)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - run: GOARCH=386 go test -count=1 ./...
+
+  test-s390x:
+    name: test (linux/s390x, QEMU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - name: register the s390x QEMU binfmt handler
+        run: docker run --rm --privileged tonistiigi/binfmt --install s390x
+      - run: GOARCH=s390x go test -count=1 ./...
+
+  cross:
+    name: build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux/arm, linux/arm64, linux/riscv64, linux/loong64, linux/ppc64le, js/wasm, wasip1/wasm, windows/arm64, darwin/arm64, freebsd/amd64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - name: go vet (builds the packages and their tests)
+        run: |
+          GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}" go vet ./...
+        env:
+          TARGET: ${{ matrix.target }}
+
+  # Every decoder of guest input is fuzzed on every change. A target that
+  # does not exist fails the lane.
+  fuzz:
+    name: fuzz smoke ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: FuzzHandleControl, pkg: . }
+          - { target: FuzzPop, pkg: ./virtq }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - run: go test -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 45s ${{ matrix.pkg }}
+
+  vulns:
+    name: govulncheck, judged by vulngate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version: '1.27.3' }
+      - run: go version
+      # govulncheck's exit status does not say whether a finding is
+      # reachable; vulngate judges the JSON, and an empty scan is refused.
+      - name: govulncheck, judged by vulngate
+        run: |
+          set -eu
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install github.com/go-fleettools/fleettools/cmd/vulngate@v0.46.0
+          BIN="$(go env GOPATH)/bin"
+          "$BIN/govulncheck" -format json ./... > /tmp/vuln.json || true
+          test -s /tmp/vuln.json || { echo "::error::govulncheck wrote nothing"; exit 1; }
+          "$BIN/vulngate" -go "$(go env GOVERSION)" /tmp/vuln.json
