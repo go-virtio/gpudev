@@ -19,6 +19,7 @@ which is guest-side only. Design:
 | `gpudev/virtq` | the device side of a split virtqueue, which checks everything in the rings |
 | `gpudev/pcisim` | an emulated virtio-pci modern transport, in-process, that implements `go-virtio/common.Transport` |
 | `gpudev/memback` | an in-memory backend (byte images, composed scanouts) for tests and fuzzing |
+| `gpudev/webgpuback` | the browser backend on go-gfx/webgpu (GOOS=js): resource textures, canvas scanouts, and webgpu-batch replay through `Device.Replay` |
 
 ```go
 ram := &gpudev.RAM{Base: 1 << 30, Bytes: make([]byte, 64<<20)}
@@ -66,7 +67,22 @@ Each decoder of guest input has a fuzz target, run in CI:
   reader. A frame that fails loses its context. `BIND_RESOURCE` gives a
   bounded window of a resource attached to that same context. Nothing
   has replayed on a GPU yet.
-- **WebGPU backend:** not written yet.
+- **WebGPU backend (`webgpuback`, GOOS=js): validated in a browser on a real
+  GPU.** The go-virtio/gpu guest driver drives gpudev over `pcisim` inside
+  a Chromium worker.
+  - *2D*: the guest's framebuffer goes through `writeTexture` into the
+    resource texture, then `copyTextureToTexture` into the canvas
+    texture, which is read back and equals the guest's pixels.
+  - *webgpu-batch*: the guest creates a buffer, a WGSL shader, the
+    layouts and a compute pipeline by descriptor, then submits one
+    stream (write, dispatch, copy). The host reads back the doubled
+    values that the GPU computed.
+
+  CI runs both on macOS (a GPU adapter is required) and on Linux
+  (SwiftShader). They were also run on Apple Metal locally.
+  `BIND_RESOURCE` windows (readback into guest memory) are not
+  implemented by this backend yet, and the A8/X8-first 2D formats need a
+  swizzle pass this backend does not have yet.
 
 100% statement coverage in every package, with tests on linux, macOS,
 windows, 386 and s390x.
