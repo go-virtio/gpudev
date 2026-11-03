@@ -13,9 +13,9 @@ import (
 // context) to the backend's.
 type batchContext struct {
 	be       Context
-	bc       *batch.Context // the id table and the frame semantics: go-gfx/webgpu/batch
-	attached map[uint32]bool   // resources attached with CTX_ATTACH_RESOURCE
-	lost     bool              // a frame failed: the context accepts nothing more
+	bc       *batch.Context  // the id table and the frame semantics: go-gfx/webgpu/batch
+	attached map[uint32]bool // resources attached with CTX_ATTACH_RESOURCE
+	lost     bool            // a frame failed: the context accepts nothing more
 }
 
 // dispatch3D handles the context commands (description.tex:727-766).
