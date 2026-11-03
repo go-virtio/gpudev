@@ -198,7 +198,7 @@ func TestBrowserWebGPUBatch(t *testing.T) {
 	// the context.
 	var rb *webgpu.Buffer
 	for _, c := range be.contexts() {
-		for _, o := range c.objs {
+		for _, o := range c.Objects() {
 			if b, ok := o.(*webgpu.Buffer); ok && b.Usage()&webgpu.BufferUsageMapRead != 0 {
 				rb = b
 			}

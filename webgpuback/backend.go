@@ -18,14 +18,13 @@
 package webgpuback
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"syscall/js"
 
 	"github.com/go-gfx/webgpu"
-	"github.com/go-gfx/webgpu/wire"
+	"github.com/go-gfx/webgpu/batch"
 	"github.com/go-virtio/gpudev"
 )
 
@@ -180,7 +179,7 @@ func (b *Backend) Flush(scanout, id uint32, _ gpudev.Rect) error {
 
 // NewContext implements gpudev.Backend.
 func (b *Backend) NewContext(id uint32) (gpudev.Context, error) {
-	c := &Context{b: b, id: id, dev: b.cfg.Device, objs: map[uint32]any{}}
+	c := &Context{DeviceBackend: batch.NewDeviceBackend(b.cfg.Device), b: b, id: id}
 	b.mu.Lock()
 	b.ctxs[id] = c
 	b.mu.Unlock()
@@ -198,105 +197,24 @@ func (b *Backend) contexts() []*Context {
 	return out
 }
 
-// Context is a webgpu-batch context on the device.
+// Context is a webgpu-batch context on the device: go-gfx/webgpu's
+// batch.DeviceBackend (creation, replay, read-back), and BIND_RESOURCE.
 type Context struct {
-	b    *Backend
-	id   uint32
-	dev  *webgpu.Device
-	objs map[uint32]any // replay id -> handle
+	*batch.DeviceBackend
+	b  *Backend
+	id uint32
 }
 
 // ErrBind: BIND_RESOURCE windows (readback into guest memory) are not
 // implemented by this backend yet.
 var ErrBind = errors.New("webgpuback: BIND_RESOURCE is not implemented")
 
-func (c *Context) resolve(id uint32) (any, error) {
-	if o, ok := c.objs[id]; ok {
-		return o, nil
-	}
-	return nil, fmt.Errorf("webgpuback: object %d", id)
-}
-
-// Create implements gpudev.Context.
-func (c *Context) Create(kind uint32, desc []byte) (uint32, error) {
-	d, err := webgpu.DecodeDescriptor(wire.Kind(kind), desc, c.resolve)
-	if err != nil {
-		return 0, err
-	}
-	var o any
-	switch d := d.(type) {
-	case webgpu.BufferDescriptor:
-		o, err = c.dev.CreateBuffer(d)
-	case webgpu.TextureDescriptor:
-		o, err = c.dev.CreateTexture(d)
-	case webgpu.TextureViewCreation:
-		o, err = d.Texture.CreateView(d.Descriptor)
-	case webgpu.SamplerDescriptor:
-		o, err = c.dev.CreateSampler(&d)
-	case webgpu.ShaderModuleDescriptor:
-		o, err = c.dev.CreateShaderModule(d)
-	case webgpu.BindGroupLayoutDescriptor:
-		o, err = c.dev.CreateBindGroupLayout(d)
-	case webgpu.PipelineLayoutDescriptor:
-		o, err = c.dev.CreatePipelineLayout(d)
-	case webgpu.BindGroupDescriptor:
-		o, err = c.dev.CreateBindGroup(d)
-	case webgpu.RenderPipelineDescriptor:
-		o, err = c.dev.CreateRenderPipeline(d)
-	case webgpu.ComputePipelineDescriptor:
-		o, err = c.dev.CreateComputePipeline(d)
-	}
-	if err != nil {
-		return 0, err
-	}
-	id, err := webgpu.ReplayID(o)
-	if err != nil {
-		return 0, err
-	}
-	c.objs[id] = o
-	return id, nil
-}
-
-// Destroy implements gpudev.Context.
-func (c *Context) Destroy(id uint32) {
-	switch o := c.objs[id].(type) {
-	case *webgpu.Buffer:
-		o.Destroy()
-	case *webgpu.Texture:
-		o.Destroy()
-	case *webgpu.RenderPipeline:
-		o.Release()
-	case *webgpu.ComputePipeline:
-		o.Release()
-	}
-	delete(c.objs, id)
-}
-
-// Replay implements gpudev.Context: the stream may name this context's
-// objects only, and Replay returns once the GPU has executed it.
-func (c *Context) Replay(words []uint32, data []byte) error {
-	refs := make([]any, 0, len(c.objs))
-	for _, o := range c.objs {
-		switch o.(type) {
-		case *webgpu.Buffer, *webgpu.Texture, *webgpu.TextureView, *webgpu.BindGroup, *webgpu.RenderPipeline, *webgpu.ComputePipeline:
-			refs = append(refs, o)
-		}
-	}
-	seq, err := c.dev.Replay(words, data, refs...)
-	if err != nil {
-		return err
-	}
-	return c.dev.WaitSubmitted(context.Background(), seq)
-}
-
 // Bind implements gpudev.Context.
 func (c *Context) Bind(uint32, gpudev.Window) error { return ErrBind }
 
 // Close implements gpudev.Context.
 func (c *Context) Close() {
-	for id := range c.objs {
-		c.Destroy(id)
-	}
+	c.DeviceBackend.Close()
 	c.b.mu.Lock()
 	delete(c.b.ctxs, c.id)
 	c.b.mu.Unlock()

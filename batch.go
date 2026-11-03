@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-gfx/webgpu/wire"
+	"github.com/go-gfx/webgpu/batch"
 	"github.com/go-virtio/gpu/wgpubatch"
 )
 
@@ -13,9 +13,9 @@ import (
 // context) to the backend's.
 type batchContext struct {
 	be       Context
-	ids      map[uint32]uint32 // guest id -> backend id
-	attached map[uint32]bool   // resources attached with CTX_ATTACH_RESOURCE
-	lost     bool              // a frame failed: the context accepts nothing more
+	bc       *batch.Context  // the id table and the frame semantics: go-gfx/webgpu/batch
+	attached map[uint32]bool // resources attached with CTX_ATTACH_RESOURCE
+	lost     bool            // a frame failed: the context accepts nothing more
 }
 
 // dispatch3D handles the context commands (description.tex:727-766).
@@ -80,7 +80,7 @@ func (d *Device) ctxCreate(ctx, nlen, init uint32) response {
 	if err != nil {
 		return errResp(RespErrOutOfMemory)
 	}
-	d.ctxs[ctx] = &batchContext{be: be, ids: map[uint32]uint32{}, attached: map[uint32]bool{}}
+	d.ctxs[ctx] = &batchContext{be: be, bc: batch.New(be, batch.Config{}), attached: map[uint32]bool{}}
 	return okNoData
 }
 
@@ -94,45 +94,30 @@ func (d *Device) runFrame(c *batchContext, frame []byte, caps *wgpubatch.Caps) e
 	if err != nil {
 		return err
 	}
-	host := func(id uint32) (uint32, bool) { h, ok := c.ids[id]; return h, ok }
 	for _, m := range msgs {
 		switch m.Type {
 		case wgpubatch.MsgCreate:
 			cr, _ := m.Create(lim) // checked by Decode
 			// Decode bounded the id below MaxObjects, which bounds the
 			// live count too.
-			if _, live := c.ids[cr.ID]; live || !wire.Kind(cr.Kind).Valid() {
-				return fmt.Errorf("%w: CREATE %d", errFrame, cr.ID)
-			}
-			if err := wire.RemapDescriptor(cr.Descriptor, host); err != nil {
+			if err := c.bc.Create(cr.ID, cr.Kind, cr.Descriptor); err != nil {
 				return err
 			}
-			id, err := c.be.Create(cr.Kind, cr.Descriptor)
-			if err != nil {
-				return err
-			}
-			c.ids[cr.ID] = id
 		case wgpubatch.MsgDestroy:
 			ids, _ := m.Destroy(lim)
-			for _, id := range ids {
-				h, live := c.ids[id]
-				if !live {
-					return fmt.Errorf("%w: DESTROY %d", errFrame, id)
-				}
-				c.be.Destroy(h)
-				delete(c.ids, id)
-			}
-		case wgpubatch.MsgStream:
-			s, _ := m.Stream()
-			if err := wire.Remap(s.Words, uint32(len(s.Data)), host); err != nil {
+			if err := c.bc.Destroy(ids...); err != nil {
 				return err
 			}
-			if err := c.be.Replay(s.Words, s.Data); err != nil {
+		case wgpubatch.MsgStream:
+			// No read window on this transport: a stream that reads is
+			// refused (batch.ErrRead).
+			s, _ := m.Stream()
+			if err := c.bc.Stream(s.Words, s.Data, nil); err != nil {
 				return err
 			}
 		case wgpubatch.MsgBindResource:
 			b, _ := m.BindResource(lim)
-			h, live := c.ids[b.ID]
+			h, live := c.bc.Lookup(b.ID)
 			r := d.res[b.ResourceID]
 			if !live || r == nil || !c.attached[b.ResourceID] || b.Offset > r.length || b.Size > r.length-b.Offset {
 				return fmt.Errorf("%w: BIND_RESOURCE %d", errFrame, b.ID)
