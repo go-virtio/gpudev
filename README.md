@@ -63,8 +63,13 @@ Each decoder of guest input has a fuzz target, run in CI:
   `wgpubatch.Decode`. Guest object ids are private to the context and are
   translated to the backend's ids, in streams (`wire.Remap`) and in
   creation descriptors (`wire.RemapDescriptor`), before the backend sees
-  them. The backend then checks each stream with go-gfx/webgpu's own
-  reader. A frame that fails loses its context. `BIND_RESOURCE` gives a
+  them. The id table and the three messages (create, destroy, stream) are
+  go-gfx/webgpu's `batch.Context`, shared with every other transport; gpudev
+  adds the virtio framing, `BIND_RESOURCE` and the device's limits. The
+  backend then checks each stream with go-gfx/webgpu's own reader. A frame
+  that fails loses its context. A stream that reads back
+  (`wire.ReadBuffer`, stream version 4) is refused on this transport: it
+  has no read window yet. `BIND_RESOURCE` gives a
   bounded window of a resource attached to that same context.
   A guest program written against the go-gfx/webgpu API also runs
   through this path: a remote device (`webgpu.NewRemoteDevice`) sends
@@ -83,8 +88,9 @@ Each decoder of guest input has a fuzz target, run in CI:
 
   CI runs both on macOS (a GPU adapter is required) and on Linux
   (SwiftShader). They were also run on Apple Metal locally.
-  `BIND_RESOURCE` windows (readback into guest memory) are not
-  implemented by this backend yet, and the A8/X8-first 2D formats need a
+  The context is go-gfx/webgpu's `batch.DeviceBackend`, which also reads
+  buffers back. `BIND_RESOURCE` windows (readback into guest memory) are
+  not implemented by this backend yet, and the A8/X8-first 2D formats need a
   swizzle pass this backend does not have yet.
 
 100% statement coverage in every package, with tests on linux, macOS,
